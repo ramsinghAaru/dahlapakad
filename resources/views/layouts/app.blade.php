@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" x-data="{ showAuthModal: false, activeTab: 'login' }" x-cloak>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,8 @@
 
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
     <!-- Custom CSS -->
     <link href="{{ asset('css/style.css') }}" rel="stylesheet">
     
@@ -24,60 +25,159 @@
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="{{ url('/') }}">Dehla Pakad</a>
+            <a class="navbar-brand fw-bold" href="{{ url('/') }}">
+                <i class="fa fa-gamepad me-2"></i>Dehla Pakad
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" 
                     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url('/') }}">Home</a>
+                        <a class="nav-link {{ request()->is('/') ? 'active' : '' }}" href="{{ url('/') }}">
+                            <i class="fa fa-home d-lg-none me-2"></i>Home
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url('/about') }}">About</a>
+                        <a class="nav-link {{ request()->is('about') ? 'active' : '' }}" href="{{ url('/about') }}">
+                            <i class="fa fa-info-circle d-lg-none me-2"></i>About
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url('/terms') }}">Terms</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url('/privacy') }}">Privacy</a>
+                        <a class="nav-link {{ request()->is('play*') ? 'active' : '' }}" href="{{ url('/play') }}">
+                            <i class="fa fa-play d-lg-none me-2"></i>Play
+                        </a>
                     </li>
                 </ul>
-                <div class="d-flex">
-                    <a href="{{ url('/play') }}" class="btn btn-light me-2">Play Now</a>
+                <div class="d-flex flex-column flex-lg-row gap-3 my-2 my-lg-0">
+                    @auth
+                        <div class="d-flex align-items-center me-0 me-lg-3 mb-2 mb-lg-0">
+                            <img src="{{ Auth::user()->avatar ?? 'https://ui-avatars.com/api/?name='.urlencode(Auth::user()->name).'&background=random' }}" 
+                                 alt="{{ Auth::user()->name }}" 
+                                 class="rounded-circle me-2" 
+                                 style="width: 32px; height: 32px; object-fit: cover;">
+                            <span class="text-white d-none d-lg-inline">{{ Auth::user()->name }}</span>
+                        </div>
+                        <a href="{{ route('dashboard') }}" class="btn btn-outline-light me-lg-2 mb-2 mb-lg-0" 
+                           data-bs-toggle="tooltip" data-bs-placement="bottom" title="Dashboard">
+                            <i class="fa fa-tachometer-alt"></i>
+                            <span class="d-none d-lg-inline ms-1">Dashboard</span>
+                        </a>
+                        <form method="POST" action="{{ route('logout') }}" class="d-inline">
+                            @csrf
+                            <button type="submit" class="btn btn-outline-light w-100" 
+                                    data-bs-toggle="tooltip" data-bs-placement="bottom" title="Logout">
+                                <i class="fa fa-sign-out-alt"></i>
+                                <span class="d-none d-lg-inline ms-1">Logout</span>
+                            </button>
+                        </form>
+                    @else
+                        <div class="d-flex flex-column flex-lg-row gap-2 w-100">
+                            <a href="{{ route('login') }}" 
+                               class="btn btn-outline-light text-nowrap d-flex align-items-center justify-content-center"
+                               data-bs-toggle="tooltip" data-bs-placement="bottom" title="Sign in to your account">
+                                <i class="fa fa-sign-in me-1"></i>
+                                <span>Login</span>
+                            </a>
+                            <a href="{{ route('register') }}" 
+                               class="btn btn-primary text-nowrap d-flex align-items-center justify-content-center"
+                               data-bs-toggle="tooltip" data-bs-placement="bottom" title="Create a new account">
+                                <i class="fa fa-user-plus me-1"></i>
+                                <span>Register</span>
+                            </a>
+                        </div>
+                    @endauth
                 </div>
             </div>
         </div>
     </nav>
 
     <!-- Page Content -->
-    <main class="py-4">
-        <div class="container">
+    <main class="flex-grow-1 py-3 py-md-4">
+        <div class="container px-3">
+            @if(session('success'))
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    {{ session('success') }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            @endif
+            
+            @if(session('error'))
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    {{ session('error') }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            @endif
+            
             @yield('content')
         </div>
     </main>
 
     <!-- Footer -->
-    <footer class="footer">
+    <footer class="bg-dark text-white py-4 mt-4">
         <div class="container">
-            <div class="row">
-                <div class="col-md-6 text-center text-md-start">
-                    <p class="mb-0">&copy; {{ date('Y') }} Dehla Pakad. All rights reserved.</p>
+            <div class="row align-items-center">
+                <div class="col-12 col-md-6 text-center text-md-start mb-3 mb-md-0">
+                    <p class="mb-0">
+                        <i class="fa fa-copyright"></i> {{ date('Y') }} Dehla Pakad. All rights reserved.
+                    </p>
                 </div>
-                <div class="col-md-6 text-center text-md-end">
-                    <a href="{{ url('/terms') }}" class="text-decoration-none me-3">Terms</a>
-                    <a href="{{ url('/privacy') }}" class="text-decoration-none">Privacy</a>
+                <div class="col-12 col-md-6 text-center text-md-end">
+                    <div class="d-flex justify-content-center justify-content-md-end gap-3">
+                        <a href="{{ url('/about') }}" class="text-white text-decoration-none">
+                            <i class="fa fa-info-circle me-1"></i> About
+                        </a>
+                        <a href="{{ url('/terms') }}" class="text-white text-decoration-none">
+                            <i class="fa fa-file-text me-1"></i> Terms
+                        </a>
+                        <a href="{{ url('/privacy') }}" class="text-white text-decoration-none">
+                            <i class="fa fa-shield me-1"></i> Privacy
+                        </a>
+                        <a href="#" class="text-white text-decoration-none">
+                            <i class="fa fa-question-circle me-1"></i> Help
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
     </footer>
 
-    <!-- Bootstrap 5 JS Bundle with Popper -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Alpine.js -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     
     @stack('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize tooltips
+        document.addEventListener('DOMContentLoaded', function() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
+    </script>
+    <style>
+        /* Custom styles for auth buttons */
+        .navbar .btn-outline-light:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        .navbar .btn-primary {
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .navbar .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        .navbar .nav-link {
+            transition: all 0.2s ease-in-out;
+        }
+        .navbar .nav-link:hover {
+            color: rgba(255, 255, 255, 0.9) !important;
+        }
+    </style>
 </body>
 </html>

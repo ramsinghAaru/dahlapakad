@@ -2,6 +2,10 @@
 
 @section('title', 'Play Dehla Pakad Online | Dehla Pakad Card Game')
 
+@push('auth_modal')
+    @include('auth.modal')
+@endpush
+
 @push('meta')
     <meta name="description" content="Play Dehla Pakad, the exciting Indian card game, online with players from around the world. Join a game now!">
     <meta name="keywords" content="Dehla Pakad, card game, Indian card game, online game, play cards">
