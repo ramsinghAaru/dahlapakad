@@ -35,6 +35,14 @@ Route::middleware(['auth'])->group(function () {
     
     // Rooms resource
     Route::resource('rooms', 'App\Http\Controllers\RoomController');
+    
+    // Custom room join route
+    Route::post('/rooms/{room}/join', [App\Http\Controllers\RoomController::class, 'join'])
+        ->name('rooms.join');
+        
+    // Room show route (for viewing a specific room)
+    Route::get('/rooms/{room}', [App\Http\Controllers\RoomController::class, 'show'])
+        ->name('rooms.show');
 });
 
 Auth::routes();

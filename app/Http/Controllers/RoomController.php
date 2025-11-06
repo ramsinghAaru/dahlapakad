@@ -29,27 +29,145 @@ class RoomController extends Controller
         ]);
     }
 
-    public function create(Request $r)
+    /**
+     * Show the form for creating a new room.
+     *
+     * @return \Illuminate\View\View
+     */
+    public function create()
     {
-        $code = strtoupper(Str::random(6));
-        $room = Room::create([
-            'code' => $code,
-            'trump_method' => $r->integer('trump_method', 1),
-            'status' => 'waiting',
-            'settings' => [
-                'is_public' => $r->boolean('is_public', false),
-                'max_players' => 4,
-                'game_type' => $r->string('game_type', 'standard'),
-            ]
+        return view('rooms.create');
+    }
+
+    /**
+     * Store a newly created room in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'room_name' => 'nullable|string|max:50',
+            'game_type' => 'required|in:standard,tournament,practice',
+            'max_players' => 'required|integer|min:2|max:6',
+            'trump_method' => 'required|integer|in:1,2,3',
+            'is_public' => 'boolean',
         ]);
+
+        // Generate a unique room code
+        do {
+            $code = strtoupper(Str::random(6));
+        } while (Room::where('code', $code)->exists());
+
+        try {
+            DB::beginTransaction();
+
+            // Create the room
+            $room = Room::create([
+                'code' => $code,
+                'name' => $validated['room_name'] ?? null,
+                'trump_method' => $validated['trump_method'],
+                'status' => 'waiting',
+                'settings' => [
+                    'is_public' => $validated['is_public'] ?? false,
+                    'max_players' => $validated['max_players'],
+                    'game_type' => $validated['game_type'],
+                    'created_by' => auth()->id(),
+                ]
+            ]);
+
+            // Add the creator as the first player
+            $room->users()->attach(auth()->id(), [
+                'is_owner' => true,
+                'joined_at' => now(),
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('rooms.show', $room->code)
+                ->with('success', 'Room created successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Room creation failed: ' . $e->getMessage());
+            
+            return back()->withInput()
+                ->with('error', 'Failed to create room. Please try again.');
+        }
+    }
+
+    /**
+     * Display the specified room.
+     *
+     * @param  string  $code
+     * @return \Illuminate\View\View|\Illuminate\Http\Response
+     */
+    /**
+     * Display the specified room or return room data as JSON.
+     *
+     * @param  string  $code
+     * @return \Illuminate\View\View|\Illuminate\Http\Response
+     */
+    public function show($code)
+    {
+        $room = Room::where('code', $code)
+            ->with(['users' => function($query) {
+                $query->select('users.id', 'users.name', 'users.avatar')
+                    ->withPivot('is_owner', 'joined_at');
+            }, 'players', 'games' => function($query) {
+                $query->latest()->first();
+            }])
+            ->firstOrFail();
+
+        $user = auth()->user();
         
-        return response()->json([
-            'code' => $room->code,
-            'status' => $room->status,
-            'settings' => $room->settings
+        // For API/JSON responses
+        if (request()->wantsJson()) {
+            return response()->json($room);
+        }
+
+        // For web view
+        $isInRoom = $user && $room->users->contains($user->id);
+        $isOwner = $isInRoom && $room->users->find($user->id)->pivot->is_owner;
+
+        // If user is not in the room and room is full, redirect back with error
+        if (!$isInRoom && $room->users->count() >= ($room->settings['max_players'] ?? 4)) {
+            return redirect()->route('play')
+                ->with('error', 'This room is already full.');
+        }
+
+        // If user is not in the room, add them
+        if ($user && !$isInRoom) {
+            try {
+                $room->users()->attach($user->id, [
+                    'is_owner' => false,
+                    'joined_at' => now(),
+                ]);
+                
+                // Refresh the room data
+                $room->load('users');
+            } catch (\Exception $e) {
+                \Log::error('Failed to join room: ' . $e->getMessage());
+                return back()->with('error', 'Failed to join the room. Please try again.');
+            }
+        }
+
+        return view('rooms.show', [
+            'room' => $room,
+            'isOwner' => $isOwner,
+            'playerCount' => $room->users->count(),
+            'maxPlayers' => $room->settings['max_players'] ?? 4,
         ]);
     }
 
+    /**
+     * Handle joining a room via AJAX or form submission.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  string  $code
+     * @return \Illuminate\Http\Response
+     */
     public function join(Request $r, $code)
     {
         $room = Room::where('code', $code)->firstOrFail();
@@ -155,13 +273,6 @@ class RoomController extends Controller
         }
 
         return response()->json($response);
-    }
-
-    public function show($code)
-    {
-        return Room::with(['players', 'games' => function($query) {
-            $query->latest()->first();
-        }])->where('code', $code)->firstOrFail();
     }
 
     public function listPublicRooms(Request $request)
