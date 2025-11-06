@@ -67,9 +67,12 @@
                                         </td>
                                         <td class="align-middle">
                                             @if($room->status === 'waiting' && $room->users_count < ($room->settings['max_players'] ?? 4))
-                                                <a href="{{ route('rooms.join', $room->code) }}" class="btn btn-sm btn-success">
-                                                    <i class="fa fa-sign-in-alt me-1"></i> Join
-                                                </a>
+                                                <form action="{{ route('rooms.join', $room->code) }}" method="POST" class="d-inline join-room-form" data-room-code="{{ $room->code }}">
+                                                    @csrf
+                                                    <button type="submit" class="btn btn-sm btn-success">
+                                                        <i class="fa fa-sign-in-alt me-1"></i> Join
+                                                    </button>
+                                                </form>
                                             @else
                                                 <button class="btn btn-sm btn-outline-secondary" disabled>
                                                     <i class="fa fa-eye me-1"></i> View
@@ -101,4 +104,61 @@
         </div>
     </div>
 </div>
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle join room form submission
+        const joinForms = document.querySelectorAll('.join-room-form');
+        
+        joinForms.forEach(form => {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const button = this.querySelector('button[type="submit"]');
+                const originalText = button.innerHTML;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Joining...';
+                button.disabled = true;
+                
+                // Get the room code from the form's data attribute
+                const roomCode = this.dataset.roomCode;
+                
+                // Submit the form via AJAX
+                fetch(this.action, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                        _token: document.querySelector('input[name="_token"]').value
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Handle the response
+                    if (data.status === 'reconnected' || data.message === 'Reconnected to your seat') {
+                        // User is already in the room, redirect to the room page
+                        window.location.href = `/rooms/${roomCode}`;
+                    } else if (data.redirect_url) {
+                        // Redirect to the provided URL
+                        window.location.href = data.redirect_url;
+                    } else {
+                        // Default behavior: redirect to the room page
+                        window.location.href = `/rooms/${roomCode}`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while joining the room. Please try again.');
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                });
+            });
+        });
+    });
+</script>
+@endpush
+
 @endsection

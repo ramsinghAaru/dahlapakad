@@ -24,11 +24,15 @@
                 </div>
                 <div>
                     @if($isOwner)
-                        <button class="btn btn-primary" id="startGameBtn" {{ $playerCount < 2 ? 'disabled' : '' }}>
+                        <button class="btn btn-primary d-none" id="startGameBtn">
                             <i class="fa fa-play me-1"></i> Start Game
                         </button>
                     @endif
-                    <button class="btn btn-outline-danger ms-2" id="leaveRoomBtn">
+                    <button class="btn {{ $isReady ? 'btn-success' : 'btn-outline-primary' }} me-2" id="readyBtn">
+                        <i class="fa {{ $isReady ? 'fa-check' : 'fa-thumbs-up' }} me-1"></i>
+                        {{ $isReady ? 'Ready!' : 'I\'m Ready' }}
+                    </button>
+                    <button class="btn btn-outline-danger" id="leaveRoomBtn">
                         <i class="fa fa-sign-out-alt me-1"></i> Leave Room
                     </button>
                 </div>
@@ -53,9 +57,9 @@
                             <p class="text-muted">Waiting for players to join...</p>
                         </div>
                     @else
-                        <div class="row g-3">
+                        <div class="row g-3" id="players-list">
                             @foreach($room->users as $user)
-                                <div class="col-6 col-md-4 col-lg-3">
+                                <div class="col-6 col-md-4 col-lg-3" data-player-id="{{ $user->id }}">
                                     <div class="card border-0 shadow-sm h-100">
                                         <div class="card-body text-center">
                                             <div class="position-relative d-inline-block mb-2">
@@ -70,9 +74,22 @@
                                                     </span>
                                                 @endif
                                             </div>
-                                            <h6 class="mb-0">{{ $user->name }}</h6>
+                                            <h6 class="mb-0">
+                                                {{ $user->name }}
+                                                <div class="player-status">
+                                                    @if($user->pivot->is_ready)
+                                                        <span class="badge bg-success ms-1">
+                                                            <i class="fa fa-check"></i> Ready
+                                                        </span>
+                                                    @else
+                                                        <span class="badge bg-secondary ms-1">
+                                                            <i class="fa fa-clock"></i> Waiting
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </h6>
                                             <small class="text-muted">
-                                                {{ $user->pivot->joined_at->diffForHumans() }}
+                                                {{ $user->pivot->joined_at ? $user->pivot->joined_at->diffForHumans() : 'Just now' }}
                                             </small>
                                         </div>
                                     </div>
@@ -197,7 +214,77 @@
 </div>
 
 @push('scripts')
+<script src="https://js.pusher.com/7.0/pusher.min.js"></script>
 <script>
+    // Initialize Pusher
+    const pusherKey = '{{ config('broadcasting.connections.pusher.key') }}';
+    const pusherCluster = '{{ config('broadcasting.connections.pusher.options.cluster', 'mt1') }}';
+    const currentUserId = {{ auth()->id() }};
+    
+    // Only initialize Pusher if we have the required keys
+    if (pusherKey && pusherKey !== '${PUSHER_APP_KEY}') {
+        window.pusher = new Pusher(pusherKey, {
+            cluster: pusherCluster,
+            encrypted: true
+        });
+
+        // Subscribe to the room channel
+        const channel = window.pusher.subscribe('room.{{ $room->id }}');
+
+        // Listen for player status updates
+        channel.bind('player.status.updated', function(data) {
+            // Skip if this is the current user's own update
+            if (data.user_id === currentUserId) return;
+            
+            // Find the player element
+            const playerElement = document.querySelector(`[data-player-id="${data.user_id}"]`);
+            if (playerElement) {
+                // Update the ready status
+                const statusElement = playerElement.querySelector('.player-status');
+                if (statusElement) {
+                    if (data.is_ready) {
+                        statusElement.innerHTML = '<span class="badge bg-success"><i class="fa fa-check"></i> Ready</span>';
+                    } else {
+                        statusElement.innerHTML = '<span class="badge bg-secondary"><i class="fa fa-clock"></i> Waiting</span>';
+                    }
+                }
+                
+                // Update the ready button if this is the current user
+                if (data.user_id === currentUserId) {
+                    const readyBtn = document.getElementById('readyBtn');
+                    if (readyBtn) {
+                        if (data.is_ready) {
+                            readyBtn.classList.remove('btn-outline-primary');
+                            readyBtn.classList.add('btn-success');
+                            readyBtn.innerHTML = '<i class="fa fa-check me-1"></i> Ready!';
+                        } else {
+                            readyBtn.classList.remove('btn-success');
+                            readyBtn.classList.add('btn-outline-primary');
+                            readyBtn.innerHTML = '<i class="fa fa-thumbs-up me-1"></i> I\'m Ready';
+                        }
+                    }
+                }
+            }
+        });
+
+        // Listen for the all.players.ready event
+        channel.bind('all.players.ready', function(data) {
+            if (data.redirect_url) {
+                // Show a countdown before redirecting
+                let countdown = 3;
+                const countdownInterval = setInterval(() => {
+                    if (countdown > 0) {
+                        toastr.info(`Game starting in ${countdown}...`, '', {timeOut: 1000});
+                        countdown--;
+                    } else {
+                        clearInterval(countdownInterval);
+                        window.location.href = data.redirect_url;
+                    }
+                }, 1000);
+            }
+        });
+    }
+
     // Copy room code to clipboard
     function copyToClipboard(text) {
         navigator.clipboard.writeText(text).then(function() {
@@ -233,22 +320,132 @@
     // Handle start game (for room owner)
     @if($isOwner)
     document.getElementById('startGameBtn').addEventListener('click', function() {
-        // Add your start game logic here
-        this.disabled = true;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Starting...';
+        const button = this;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Starting...';
         
-        // Simulate API call
-        setTimeout(() => {
-            // On success, redirect to game page
-            // window.location.href = '{{ route("game.play", ["room" => $room->code]) }}';
-            
-            // For now, just show an alert
-            alert('Game starting soon! This will redirect to the game page.');
-            this.disabled = false;
-            this.innerHTML = '<i class="fa fa-play me-1"></i> Start Game';
-        }, 1500);
+        // Create a form data object to send as form data
+        const formData = new FormData();
+        formData.append('_token', '{{ csrf_token() }}');
+        
+        // Make an API call to start the game
+        fetch('{{ route("game.start", $room->code) }}', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+            },
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw err; });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Redirect to the game play page
+                window.location.href = data.redirect_url || '{{ route("game.play", ["room" => $room->code]) }}';
+            } else {
+                throw new Error(data.message || 'Failed to start game');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to start game: ' + (error.message || 'Unknown error occurred'));
+            button.disabled = false;
+            button.innerHTML = '<i class="fa fa-play me-1"></i> Start Game';
+        });
     });
     @endif
+
+    // Handle ready status
+    document.getElementById('readyBtn').addEventListener('click', function() {
+        const btn = this;
+        const roomCode = '{{ $room->code }}';
+        const currentUserId = {{ auth()->id() }};
+        
+        // Show loading state
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Updating...';
+        
+        // Send AJAX request to toggle ready status
+        fetch(`/rooms/${roomCode}/toggle-ready`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Toggle button state
+                const isReady = data.is_ready;
+                if (isReady) {
+                    btn.classList.remove('btn-outline-primary');
+                    btn.classList.add('btn-success');
+                    btn.innerHTML = '<i class="fa fa-check me-1"></i> Ready!';
+                    
+                    // Update the ready badge for the current user
+                    const badge = document.getElementById(`ready-badge-${currentUserId}`);
+                    if (badge) {
+                        badge.className = 'badge bg-success ms-1';
+                        badge.innerHTML = '<i class="fa fa-check"></i> Ready';
+                    }
+                } else {
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-outline-primary');
+                    btn.innerHTML = '<i class="fa fa-thumbs-up me-1"></i> I\'m Ready';
+                    
+                    // Update the ready badge for the current user
+                    const badge = document.getElementById(`ready-badge-${currentUserId}`);
+                    if (badge) {
+                        badge.className = 'badge bg-secondary ms-1';
+                        badge.innerHTML = '<i class="fa fa-clock"></i> Waiting';
+                    }
+                }
+                
+                // Show success message
+                if (data.message) {
+                    toastr.success(data.message);
+                    
+                    // If game is starting, the redirect will be handled by the Pusher event
+                    if (data.game_started && data.redirect_url && !window.pusher) {
+                        // Fallback in case Pusher is not available
+                        let countdown = 3;
+                        const countdownInterval = setInterval(() => {
+                            if (countdown > 0) {
+                                toastr.info(`Game starting in ${countdown}...`, '', {timeOut: 1000});
+                                countdown--;
+                            } else {
+                                clearInterval(countdownInterval);
+                                window.location.href = data.redirect_url;
+                            }
+                        }, 1000);
+                    }
+                }
+            } else {
+                toastr.error(data.message || 'Failed to update ready status');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            toastr.error('An error occurred while updating ready status');
+        })
+        .finally(() => {
+            // Re-enable button
+            btn.disabled = false;
+        });
+    });
+    
+    // Auto-focus the ready button for better UX
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('readyBtn').focus();
+    });
 
     // Simple chat functionality
     document.getElementById('chat-form').addEventListener('submit', function(e) {

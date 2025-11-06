@@ -3,7 +3,73 @@ namespace App\Http\Controllers;
 use App\Models\{Game,Room,Move};
 use Illuminate\Http\Request;
 
-class GameController extends Controller{
+class GameController extends Controller
+{
+    /**
+     * Show the game play interface
+     *
+     * @param  \App\Models\Room  $room
+     * @return \Illuminate\View\View
+     */
+    public function play($code)
+    {
+        // Find the room by code
+        $room = Room::where('code', $code)->firstOrFail();
+        
+        // Check if the user is a player in this room
+        $user = auth()->user();
+        $player = $room->players()->where('user_id', $user->id)->firstOrFail();
+        
+        \Log::info('Game play accessed', [
+            'room_code' => $code,
+            'room_id' => $room->id,
+            'user_id' => $user->id,
+            'player_id' => $player->id
+        ]);
+        
+        // Get or create the game
+        $game = $room->games()->latest()->first();
+        
+        if (!$game) {
+            // If no game exists, create a new one
+            $game = $this->startNewGame($room);
+        }
+        
+        // Get the player's seat and other players
+        $players = $room->players()->with('user')->get();
+        $playerSeats = [];
+        
+        foreach ($players as $p) {
+            $playerSeats[$p->seat] = [
+                'name' => $p->user->name,
+                'avatar' => $p->user->avatar ?? 'https://ui-avatars.com/api/?name=' . urlencode($p->user->name) . '&background=random',
+                'is_owner' => $p->is_owner,
+                'is_ready' => $p->is_ready
+            ];
+        }
+        
+        return view('game.play', [
+            'room' => $room,
+            'game' => $game,
+            'player' => $player,
+            'playerSeats' => $playerSeats
+        ]);
+    }
+    
+    /**
+     * Start a new game
+     *
+     * @param  \App\Models\Room  $room
+     * @return \App\Models\Game
+     */
+    private function startNewGame(Room $room)
+    {
+        // Start the game
+        $response = $this->start(new Request(), $room->code);
+        
+        // Return the created game
+        return Game::find($response->id);
+    }
   public function start(Request $r,$code){
     $room=Room::with('players')->whereCode($code)->firstOrFail();
     if($room->players->count()!==4) abort(422,'Need 4 players');
@@ -22,7 +88,14 @@ class GameController extends Controller{
     foreach(range(1,2) as $_) foreach($seats as $s) foreach(range(1,4) as $__) $g->hands[$s][]=array_pop($g->deck);
     $g->phase='playing'; $g->save(); return $g->fresh();
   }
-  public function play(Request $r, Game $id){
+  /**
+   * Handle playing a card during the game
+   *
+   * @param  \Illuminate\Http\Request  $r
+   * @param  \App\Models\Game  $id
+   * @return \Illuminate\Http\Response|array
+   */
+  public function playCard(Request $r, Game $id){
     $g=$id->fresh(); $seat=$r->string('seat'); $card=strtoupper($r->string('card'));
     if($g->turn_seat!==$seat) abort(409,'Not your turn');
     if(!in_array($card,$g->hands[$seat])) abort(422,'Card not in hand');

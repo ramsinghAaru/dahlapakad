@@ -62,7 +62,6 @@ class RoomController extends Controller
 
         try {
             DB::beginTransaction();
-
             // Create the room
             $room = Room::create([
                 'code' => $code,
@@ -76,13 +75,21 @@ class RoomController extends Controller
                     'created_by' => auth()->id(),
                 ]
             ]);
-
+           
             // Add the creator as the first player
-            $room->users()->attach(auth()->id(), [
+            $user = auth()->user();
+           
+            // Add the creator as the first player with all required fields
+            $room->users()->attach($user->id, [
                 'is_owner' => true,
                 'joined_at' => now(),
+                'name' => $user->name,
+                'seat' => 'N', // Changed from 'seat_position' to 'seat'
+                'is_ready' => false,
+                'partner_seat' => null, // Added missing required field
+                'device_id' => null,    // Added missing required field
+                'avatar' => null        // Added missing required field
             ]);
-
             DB::commit();
 
             return redirect()->route('rooms.show', $room->code)
@@ -112,15 +119,13 @@ class RoomController extends Controller
     public function show($code)
     {
         $room = Room::where('code', $code)
-            ->with(['users' => function($query) {
-                $query->select('users.id', 'users.name', 'users.avatar')
-                    ->withPivot('is_owner', 'joined_at');
-            }, 'players', 'games' => function($query) {
+            ->with(['players.user', 'games' => function($query) {
                 $query->latest()->first();
             }])
             ->firstOrFail();
 
         $user = auth()->user();
+        $currentPlayer = null;
         
         // For API/JSON responses
         if (request()->wantsJson()) {
@@ -128,8 +133,13 @@ class RoomController extends Controller
         }
 
         // For web view
-        $isInRoom = $user && $room->users->contains($user->id);
-        $isOwner = $isInRoom && $room->users->find($user->id)->pivot->is_owner;
+        if ($user) {
+            $currentPlayer = $room->players->firstWhere('user_id', $user->id);
+        }
+        
+        $isInRoom = $currentPlayer !== null;
+        $isOwner = $isInRoom && $currentPlayer->is_owner;
+        $isReady = $isInRoom && $currentPlayer->is_ready;
 
         // If user is not in the room and room is full, redirect back with error
         if (!$isInRoom && $room->users->count() >= ($room->settings['max_players'] ?? 4)) {
@@ -137,27 +147,56 @@ class RoomController extends Controller
                 ->with('error', 'This room is already full.');
         }
 
-        // If user is not in the room, add them
+        // If user is not in the room, add them as a player
         if ($user && !$isInRoom) {
             try {
-                $room->users()->attach($user->id, [
+                // Get the next available seat
+                $takenSeats = $room->players->pluck('seat')->filter()->toArray();
+                $availableSeats = array_diff(['N', 'E', 'S', 'W'], $takenSeats);
+                
+                if (empty($availableSeats)) {
+                    return back()->with('error', 'This room is already full.');
+                }
+                
+                $seat = reset($availableSeats);
+                $partnerSeat = $this->getPartnerSeat($seat);
+                
+                // Create a new player
+                $room->players()->create([
+                    'user_id' => $user->id,
                     'is_owner' => false,
-                    'joined_at' => now(),
+                    'name' => $user->name,
+                    'seat' => $seat,
+                    'partner_seat' => $partnerSeat,
+                    'is_ready' => false,
+                    'avatar' => $user->avatar,
+                    'joined_at' => now()
                 ]);
                 
                 // Refresh the room data
-                $room->load('users');
+                $room->load('players.user');
+                $isInRoom = true;
+                $currentPlayer = $room->players->firstWhere('user_id', $user->id);
             } catch (\Exception $e) {
                 \Log::error('Failed to join room: ' . $e->getMessage());
                 return back()->with('error', 'Failed to join the room. Please try again.');
             }
         }
 
+        // Get the current user's ready status
+        $isReady = false;
+        if ($user) {
+            $pivotData = $room->users->find($user->id)->pivot ?? null;
+            $isReady = $pivotData ? (bool)$pivotData->is_ready : false;
+        }
+
         return view('rooms.show', [
             'room' => $room,
             'isOwner' => $isOwner,
-            'playerCount' => $room->users->count(),
-            'maxPlayers' => $room->settings['max_players'] ?? 4,
+            'isReady' => $isReady,
+            'currentPlayer' => $currentPlayer,
+            'playerCount' => $room->players->count(),
+            'maxPlayers' => 4, // Fixed at 4 for this game
         ]);
     }
 
@@ -325,25 +364,261 @@ class RoomController extends Controller
         return response()->json(['message' => 'Left the room']);
     }
     
+    /**
+     * Handle starting a new game in the room.
+     *
+     * @param  string  $code  The room code
+     * @return \Illuminate\Http\Response
+     */
+    /**
+     * Toggle the ready status of the current user
+     *
+     * @param  string  $code
+     * @return \Illuminate\Http\Response
+     */
+    public function toggleReady($code)
+    {
+        try {
+            // Find the room and eager load players with user data
+            $room = Room::with(['players.user'])->where('code', $code)->firstOrFail();
+            
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated.'
+                ], 401);
+            }
+            
+            // Find the player record for the current user
+            $player = $room->players()->where('user_id', $user->id)->first();
+            
+            if (!$player) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not a player in this room.'
+                ], 403);
+            }
+            
+            // Toggle ready status
+            $isReady = !$player->is_ready;
+            
+            // Update the player's ready status
+            $player->update([
+                'is_ready' => $isReady
+            ]);
+            
+            // Broadcast the status update to all users in the room
+            broadcast(new \App\Events\PlayerStatusUpdated($room, $player, $isReady))->toOthers();
+            
+            // Reload the room data with fresh player data
+            $room->load(['players.user']);
+            
+            // Check if all players are ready
+            $allReady = $this->checkAllPlayersReady($room);
+            
+            $game = null;
+            $gameUrl = null;
+            $message = $isReady ? 'You are now ready!' : 'You are no longer ready.';
+            
+            // If all players are ready, start the game
+            if ($allReady) {
+                try {
+                    // Create a new game
+                    $game = $room->games()->create([
+                        'hand_no' => 1,
+                        'phase' => 'five_card_phase',
+                        'dealer_seat' => 'N',
+                        'turn_seat' => 'E',
+                        'trump_suit' => null,
+                        'deck' => json_encode([]),
+                        'hands' => json_encode([]),
+                        'centre_pile' => json_encode([]),
+                        'last_trick' => json_encode([]),
+                        'tricks_taken' => json_encode(['N' => 0, 'E' => 0, 'S' => 0, 'W' => 0]),
+                        'tens_taken' => json_encode(['NS' => 0, 'EW' => 0]),
+                        'consecutive_hands' => json_encode(['NS' => 0, 'EW' => 0]),
+                        'kots' => json_encode(['NS' => 0, 'EW' => 0])
+                    ]);
+                    
+                    // Reset all players' ready status
+                    $room->players()->update(['is_ready' => false]);
+                    
+                    // Update room status to 'playing' (must be one of: waiting, dealing, playing, finished)
+                    $room->update(['status' => 'playing']);
+                    
+                    // Broadcast the event to all users in the room
+                    event(new \App\Events\AllPlayersReady($room, $game));
+                    
+                    return response()->json([
+                        'success' => true,
+                        'is_ready' => $isReady,
+                        'all_ready' => true,
+                        'game_started' => true,
+                        'redirect_url' => route('game.play', $room->code),
+                        'message' => 'All players ready! Starting game...'
+                    ]);
+                    
+                } catch (\Exception $e) {
+                    \Log::error('Error starting game: ' . $e->getMessage());
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to start game: ' . $e->getMessage()
+                    ], 500);
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'is_ready' => $isReady,
+                'all_ready' => $allReady,
+                'game_started' => $allReady,
+                'game' => $game,
+                'redirect_url' => $allReady ? route('game.play', $room->code) : null
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in toggleReady: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update ready status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Check if all players in the room are ready
+     *
+     * @param  \App\Models\Room  $room
+     * @return bool
+     */
+    protected function checkAllPlayersReady(Room $room)
+    {
+        // Eager load players with their user data
+        $room->load(['players.user']);
+        
+        $players = $room->players;
+        
+        // Need at least 2 players to start
+        if ($players->count() < 2) {
+            return false;
+        }
+        
+        $ownerFound = false;
+        $allReady = true;
+        
+        // Check all players' status
+        foreach ($players as $player) {
+            if ($player->is_owner) {
+                $ownerFound = true;
+                // If owner is not ready, return false immediately
+                if (!$player->is_ready) {
+                    return false;
+                }
+            }
+            
+            // If any player is not ready, set flag to false
+            if (!$player->is_ready) {
+                $allReady = false;
+            }
+        }
+        
+        // Only return true if we found the owner and all players are ready
+        return $ownerFound && $allReady;
+    }
+    
+    /**
+     * Handle starting a new game in the room.
+     *
+     * @param  string  $code  The room code
+     * @return \Illuminate\Http\Response
+     */
+    public function startGameRequest($code)
+    {
+        // Find the room by code with the players and creator relationship loaded
+        $room = Room::with(['players', 'creator'])
+            ->where('code', $code)
+            ->firstOrFail();
+        
+        try {
+            $currentUserId = auth()->id();
+            
+            // Check if all players are ready
+            if (!$this->checkAllPlayersReady($room)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'All players must be ready to start the game.'
+                ], 400);
+            }
+            
+            // Start the game
+            $game = $this->startGame($room);
+            
+            if (!$game) {
+                throw new \Exception('Failed to start the game.');
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Game started successfully!',
+                'game_started' => true,
+                'redirect_url' => route('game.play', $room->code)
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+    
+    /**
+     * Start a new game in the room.
+     *
+     * @param  \App\Models\Room  $room
+     * @return \App\Models\Game
+     * @throws \Exception
+     */
     protected function startGame(Room $room)
     {
-        // Make sure we have exactly 4 players
+        // Make sure we have at least 2 players
         $players = $room->players()->get();
-        if ($players->count() !== 4) {
-            throw new \Exception('Cannot start game with ' . $players->count() . ' players. Need exactly 4.');
+        if ($players->count() < 2) {
+            throw new \Exception('Cannot start game with ' . $players->count() . ' players. Need at least 2.');
         }
         
         // Update room status
         $room->update(['status' => 'in_progress']);
         
-        // Create a new game instance
-        $gameController = app(\App\Http\Controllers\GameController::class);
-        $game = $gameController->start(new Request(), $room->code);
-        
-        // Notify all players that the game is starting
-        // This would typically be handled by a WebSocket or similar real-time communication
-        
-        return $game;
+        try {
+            // Create a new game record
+            $game = $room->games()->create([
+                'hand_no' => 1,
+                'phase' => 'five_card_phase',
+                'dealer_seat' => 'N', // Default dealer, can be randomized
+                'turn_seat' => 'E',   // Next player after dealer
+                'trump_suit' => null,
+                'deck' => json_encode([]), // Will be populated in the game logic
+                'hands' => json_encode([]), // Will be populated in the game logic
+                'centre_pile' => json_encode([]),
+                'last_trick' => json_encode([]),
+                'tricks_taken' => json_encode(['N' => 0, 'E' => 0, 'S' => 0, 'W' => 0]),
+                'tens_taken' => json_encode(['NS' => 0, 'EW' => 0]),
+                'consecutive_hands' => json_encode(['NS' => 0, 'EW' => 0]),
+                'kots' => json_encode(['NS' => 0, 'EW' => 0])
+            ]);
+            
+            // Reset all players' ready status for the next game
+            $room->players()->update(['is_ready' => false]);
+            
+            return $game;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error starting game: ' . $e->getMessage());
+            throw new \Exception('Failed to start game: ' . $e->getMessage());
+        }
     }
     
     public function endGame($code)

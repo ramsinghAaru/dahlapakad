@@ -43,6 +43,20 @@ Route::middleware(['auth'])->group(function () {
     // Room show route (for viewing a specific room)
     Route::get('/rooms/{room}', [App\Http\Controllers\RoomController::class, 'show'])
         ->name('rooms.show');
+        
+    // Game routes
+    Route::post('/game/{room}/start', [App\Http\Controllers\RoomController::class, 'startGameRequest'])
+        ->name('game.start');
+        
+    Route::get('/game/{room:code}/play', [App\Http\Controllers\GameController::class, 'play'])
+        ->name('game.play');
+        
+    Route::post('/game/{game}/play', [App\Http\Controllers\GameController::class, 'playCard'])
+        ->name('game.play.card');
+        
+    // Ready status
+    Route::post('/rooms/{room}/toggle-ready', [App\Http\Controllers\RoomController::class, 'toggleReady'])
+        ->name('rooms.toggle-ready');
 });
 
 Auth::routes();

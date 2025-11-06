@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Foundation\Auth\AuthenticatesUsers;
+use Illuminate\Http\Request;
 
 class LoginController extends Controller
 {
@@ -48,7 +49,7 @@ class LoginController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    protected function validateLogin(Request $request)
+    protected function validateLogin(\Illuminate\Http\Request $request)
     {
         $request->validate([
             'login' => 'required|string',
@@ -65,7 +66,7 @@ class LoginController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return array
      */
-    protected function credentials(Request $request)
+    protected function credentials(\Illuminate\Http\Request $request)
     {
         return [
             $this->username() => $request->login,

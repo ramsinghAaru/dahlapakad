@@ -43,6 +43,17 @@ class Room extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'players', 'room_id', 'user_id')
+            ->using(PlayerPivot::class)
+            ->withPivot([
+                'is_owner',
+                'joined_at',
+                'name',
+                'seat',
+                'is_ready',
+                'partner_seat',
+                'device_id',
+                'avatar'
+            ])
             ->withTimestamps();
     }
 
@@ -52,5 +63,13 @@ class Room extends Model
     public function games(): HasMany
     {
         return $this->hasMany(Game::class);
+    }
+
+    /**
+     * Get the user who created the room.
+     */
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 }

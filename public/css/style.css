@@ -1,22 +1,20 @@
-/* Base Styles */
+/* ==========================================================================
+   Base Styles and Variables
+   ========================================================================== */
 :root {
-    /* Primary Colors */
+    /* Color Palette */
     --brand-red: #F90B43;
     --deep-black: #141414;
     --pure-white: #FFFFFF;
-    
-    /* Secondary Colors */
     --dark-gray: #1E1E1E;
     --light-gray: #E6E6E6;
     --anthracite-gray: #2B2B2B;
-    
-    /* Accent Colors */
     --light-gradient-red: #FF3C6F;
     --dark-gradient-red: #C2083B;
     --soft-beige: #FDF5F6;
     --light-gray-blue: #D9E0E3;
     
-    /* Typography Colors */
+    /* Typography */
     --primary-text: #141414;
     --secondary-text: #6F6F6F;
     --link-active: #F90B43;
@@ -32,9 +30,18 @@
     --danger-color: #e74a3b;
     --light: var(--light-gray);
     --dark: var(--deep-black);
+    
+    /* Game Specific */
+    --card-width: 80px;
+    --card-height: 120px;
+    --card-margin: -15px;
+    --card-border-radius: 8px;
+    --player-avatar-size: 40px;
 }
 
-/* Global Styles */
+/* ==========================================================================
+   Base Elements
+   ========================================================================== */
 body {
     background-color: var(--pure-white);
     color: var(--primary-text);
@@ -50,7 +57,6 @@ a {
 
 a:hover {
     color: var(--dark-gradient-red);
-    text-decoration: none;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -65,10 +71,9 @@ p {
     color: var(--primary-text);
 }
 
-.text-muted {
-    color: var(--secondary-text) !important;
-}
-
+/* ==========================================================================
+   Components
+   ========================================================================== */
 /* Navigation */
 .navbar {
     background-color: var(--deep-black) !important;
@@ -222,7 +227,133 @@ p {
     text-decoration: none;
 }
 
+/* Game Components */
+.game-board {
+    position: relative;
+    height: 70vh;
+    max-width: 1200px;
+    margin: 0 auto;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.player-seat {
+    position: absolute;
+    padding: 10px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+    min-width: 120px;
+    text-align: center;
+    z-index: 10;
+}
+
+.player-seat:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-3px);
+}
+
+.player-hand {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 15px 0;
+    display: flex;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    z-index: 1000;
+    box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.playing-card {
+    width: var(--card-width);
+    height: var(--card-height);
+    margin: 0 var(--card-margin);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+    border-radius: var(--card-border-radius);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    position: relative;
+    z-index: 1;
+}
+
+.playing-card:hover {
+    transform: translateY(-10px) scale(1.05);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+
+.playing-card.selected {
+    transform: translateY(-20px) scale(1.1);
+    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.4);
+    z-index: 20;
+}
+
+.player-avatar {
+    width: var(--player-avatar-size);
+    height: var(--player-avatar-size);
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    object-fit: cover;
+    margin: 0 auto;
+}
+
+.player-name {
+    margin: 5px 0 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.player-cards {
+    margin-top: 8px;
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+}
+
+.player-card {
+    width: 20px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.game-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 180px;
+    height: 120px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 5;
+}
+
 /* Utility Classes */
+.text-muted {
+    color: var(--secondary-text) !important;
+}
+
 .rounded-lg {
     border-radius: 0.5rem;
 }
@@ -231,18 +362,21 @@ p {
     box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.175) !important;
 }
 
-/* Responsive Adjustments */
+/* Responsive Styles */
 @media (max-width: 768px) {
+    /* Layout */
     .hero-section,
     .features-section,
     .cta-section {
         padding: 3rem 0;
     }
     
+    /* Navigation */
     .navbar-collapse {
         padding: 1rem 0;
     }
     
+    /* Buttons */
     .btn {
         width: 100%;
         margin-bottom: 0.5rem;
@@ -250,5 +384,29 @@ p {
     
     .btn + .btn {
         margin-left: 0 !important;
+    }
+    
+    /* Game Elements */
+    .playing-card {
+        width: 70px;
+        margin: 0 -8px;
+    }
+    
+    .player-hand {
+        padding: 10px 0;
+    }
+    
+    .player-seat {
+        min-width: 100px;
+        padding: 8px;
+    }
+    
+    .player-avatar {
+        width: 30px;
+        height: 30px;
+    }
+    
+    .player-name {
+        font-size: 0.7rem;
     }
 }
